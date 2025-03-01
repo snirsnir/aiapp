@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>עולם תלת מימדי עם Three.js</title>
+    <!-- טעינת ספריות Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/controls/FirstPersonControls.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            cursor: default;
+        }
+        
+        #scene-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 100;
+        }
+        
+        #interaction-button {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            display: none;
+            z-index: 100;
+        }
+        
+        #interaction-button:hover {
+            background-color: #45a049;
+        }
+        
+        #controls-info {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 100;
+        }
+        
+        #next-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #2c3e50;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 200;
+            display: none;
+        }
+        
+        #back-button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            pointer-events: none;
+            z-index: 100;
+        }
+        
+        /* סגנון לתיבת העלאת מודל */
+        #upload-model-container {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            display: flex;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+            color: white;
+        }
+        
+        #upload-model-container label {
+            margin-left: 10px;
+            font-size: 14px;
+        }
+        
+        #upload-model-btn {
+            padding: 5px 10px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        #upload-model-btn:hover {
+            background-color: #2980b9;
+        }
+        
+        #file-name {
+            margin-left: 10px;
+            font-style: italic;
+            font-size: 12px;
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="scene-container"></div>
+    
+    <div id="loading">טוען את העולם...</div>
+    
+    <!-- תיבת העלאת מודל חדש -->
+    <div id="upload-model-container">
+        <label for="model-upload">העלה מודל חדש</label>
+        <input type="file" id="model-upload" accept=".glb,.gltf" style="display:none">
+        <button id="upload-model-btn" onclick="document.getElementById('model-upload').click()">עיון</button>
+        <span id="file-name"></span>
+    </div>
+    
+    <div id="controls-info">
+        <p>תנועה: הקשה על קליק שמאלי בעכבר</p>
+        <p>מבט: הזיזו את העכבר</p>
+    </div>
+    
+    <div id="crosshair">+</div>
+    
+    <button id="interaction-button">לחץ כאן לאינטראקציה</button>
+    
+    <div id="next-screen">
+        <h1>הגעת ליעד!</h1>
+        <p>זהו המסך הבא.</p>
+        <button id="back-button">חזרה לעולם</button>
+    </div>
+    
+    <script>
+        // יצירת סצנה, מצלמה ורנדרר
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 1.7, 0);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // צללים רכים יותר
+        
+        // הגדרת צבע רקע שמיים כחול
+        renderer.setClearColor(0x6495ED);
+        document.getElementById('scene-container').appendChild(renderer.domElement);
+        
+        // משתנים גלובליים
+        let controls;
+        let worldModel;
+        let customModels = []; // מערך לשמירת מודלים שהועלו על-ידי המשתמש
+        let treesWithColliders = [];
+        let isLoaded = false;
+        let clock = new THREE.Clock();
+        let ground; // משתנה לשמירת הרצפה
+        
+        // נקודת אינטראקציה
+        const interactionPoint = new THREE.Vector3(5, 0, 5);
+        const interactionRadius = 2;
+        let isNearInteractionPoint = false;
+        
+        // קבוע גובה השחקן מעל האדמה
+        const PLAYER_HEIGHT = 1.7;
+        
+        // תאורה ואפקטים
+        const setupLighting = () => {
+            // אור סביבה
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+            scene.add(ambientLight);
+            
+            // אור השמש הראשי
+            const sunLight = new THREE.DirectionalLight(0xfffaf0, 1.0);
+            sunLight.position.set(10, 20, 15);
+            sunLight.castShadow = true;
+            
+            // הגדרות צל איכותיות יותר
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 0.5;
+            sunLight.shadow.camera.far = 50;
+            sunLight.shadow.camera.left = -20;
+            sunLight.shadow.camera.right = 20;
+            sunLight.shadow.camera.top = 20;
+            sunLight.shadow.camera.bottom = -20;
+            sunLight.shadow.bias = -0.0003;
+            
+            scene.add(sunLight);
+            
+            // נקודת אור משנית לתאורת מילוי
+            const fillLight = new THREE.DirectionalLight(0xc2d1ff, 0.5);
+            fillLight.position.set(-10, 10, -10);
+            scene.add(fillLight);
+            
+            // אור נקודתי עדין במרכז הסצנה
+            const pointLight = new THREE.PointLight(0xffedbe, 0.5, 20);
+            pointLight.position.set(0, 3, 0);
+            scene.add(pointLight);
+            
+            // ערפל לתחושת עומק
+            scene.fog = new THREE.FogExp2(0x8eb5e0, 0.008);
+        };
+        
+        // טקסטורת דשא מציאותית
+        const createRealisticGrassTexture = () => {
+            const grassTextureSize = 1024;
+            const canvas = document.createElement('canvas');
+            canvas.width = grassTextureSize;
+            canvas.height = grassTextureSize;
+            const ctx = canvas.getContext('2d');
+            
+            // רקע ירוק בסיס
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#2d4c15');
+            gradient.addColorStop(0.3, '#3a5a21');
+            gradient.addColorStop(0.6, '#3e6b1d');
+            gradient.addColorStop(1, '#345c14');
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // פונקציה ליצירת גבעול דשא ריאליסטי
+            const drawGrassStrand = (x, y, width, height, color) => {
+                ctx.beginPath();
+                
+                // התחלת קו בבסיס הגבעול
+                ctx.moveTo(x, y + height);
+                
+                // יצירת עקומה מעט אקראית לגבעול הדשא
+                const cp1x = x - width/2 + Math.random() * width;
+                const cp1y = y + height * 0.7;
+                const cp2x = x - width/3 + Math.random() * width;
+                const cp2y = y + height * 0.4;
+                
+                ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);
+                
+                ctx.lineWidth = 1 + Math.random() * 1.5;
+                ctx.strokeStyle = color;
+                ctx.stroke();
+            };
+            
+            // יצירת שכבות של גבעולי דשא בגוונים שונים
+            // שכבה 1: דשא גבוה יותר - כהה
+            for (let i = 0; i < 5000; i++) {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * 10; // מעט עבור הבסיס
+                const height = 15 + Math.random() * 30;
+                const color = `hsl(${80 + Math.random() * 40}, ${60 + Math.random() * 30}%, ${20 + Math.random() * 10}%)`;
+                
+                drawGrassStrand(x, y, 2, height, color);
+            }
+            
+            // שכבה 2: דשא באורך בינוני - בהיר יותר
+            for (let i = 0; i < 8000; i++) {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * 15;
+                const height = 10 + Math.random() * 20;
+                const color = `hsl(${90 + Math.random() * 30}, ${70 + Math.random() * 20}%, ${30 + Math.random() * 15}%)`;
+                
+                drawGrassStrand(x, y, 1.5, height, color);
+            }
+            
+            // שכבה 3: דשא קצר - בהיר
+            for (let i = 0; i < 10000; i++) {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * 20;
+                const height = 5 + Math.random() * 15;
+                const color = `hsl(${100 + Math.random() * 20}, ${70 + Math.random() * 20}%, ${35 + Math.random() * 15}%)`;
+                
+                drawGrassStrand(x, y, 1, height, color);
+            }
+            
+            // הוספת פרחים קטנים ופרטים אקראיים
+            for (let i = 0; i < 500; i++) {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                const size = 1 + Math.random() * 2;
+                
+                // בחירה אקראית בין צהוב ולבן לפרחים קטנים
+                const flowerColors = ['#ffffff', '#ffffd0', '#ffff80', '#fbec5d'];
+                ctx.fillStyle = flowerColors[Math.floor(Math.random() * flowerColors.length)];
+                
+                ctx.beginPath();
+                ctx.arc(x, y, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // יצירת טקסטורה מהקנבס
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(8, 8); // חזרה רבה יותר לפרטים קטנים יותר
+            
+            return texture;
+        };
+        
+        // יצירת מפת נורמלים בסיסית
+        const createNormalMap = () => {
+            const size = 512;
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            
+            // מילוי עם צבע ברירת מחדל של נורמל מפ - כחול (0,0,1)
+            ctx.fillStyle = 'rgb(128, 128, 255)';
+            ctx.fillRect(0, 0, size, size);
+            
+            // יצירת מרקם אקראי לנורמל מפ
+            for (let i = 0; i < 5000; i++) {
+                const x = Math.random() * size;
+                const y = Math.random() * size;
+                const radius = 1 + Math.random() * 3;
+                
+                // יצירת וריאציה קטנה בכיוון הנורמל
+                const r = 128 + Math.random() * 20 - 10;
+                const g = 128 + Math.random() * 20 - 10;
+                const b = 230 + Math.random() * 25;
+                
+                ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            const normalMap = new THREE.CanvasTexture(canvas);
+            normalMap.wrapS = THREE.RepeatWrapping;
+            normalMap.wrapT = THREE.RepeatWrapping;
+            normalMap.repeat.set(8, 8);
+            
+            return normalMap;
+        };
+        
+        // יצירת קרקע עם גבעות
+        const createGround = () => {
+            const size = 200;
+            const segments = 64;
+            const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
+            const vertices = geometry.attributes.position.array;
+            
+            for (let i = 0; i < vertices.length; i += 3) {
+                vertices[i + 2] = Math.sin(vertices[i] * 0.05) * Math.cos(vertices[i + 1] * 0.05) * 3;
+            }
+            
+            geometry.computeVertexNormals();
+            
+            // יצירת המטריאל עם טקסטורה ונורמלים
+            const grassTexture = createRealisticGrassTexture();
+            const normalMap = createNormalMap();
+            
+            const groundMaterial = new THREE.MeshStandardMaterial({ 
+                map: grassTexture,
+                normalMap: normalMap,
+                normalScale: new THREE.Vector2(1, 1),
+                roughness: 0.8,
+                metalness: 0.1,
+                side: THREE.DoubleSide
+            });
+            
+            ground = new THREE.Mesh(geometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+            
+            return ground;
+        };
+        
+        // פונקציה למציאת גובה האדמה בנקודה מסוימת
+        const getGroundHeight = (x, z) => {
+            return Math.sin(x * 0.05) * Math.cos(z * 0.05) * 3;
+        };
+        
+        // יצירת מודל לעץ מציאותי
+        const createRealisticTree = (x, z, scale = 1.0, type = 'pine') => {
+    const treeGroup = new THREE.Group();
+    treeGroup.position.set(x, 0, z);
+    treeGroup.scale.set(scale, scale, scale);
+    
+    if (type === 'pine') {
+        // גזע עץ אורן
+        const trunkGeometry = new THREE.CylinderGeometry(0.2, 0.3, 4, 8);
+        const trunkMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x3d2817, 
+            roughness: 0.9, 
+            metalness: 0.0,
+            side: THREE.DoubleSide
+        });
+        const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+        trunk.position.y = 2; // גובה הגזע
+        trunk.castShadow = true;
+        trunk.receiveShadow = true;
+        treeGroup.add(trunk);
+        
+        // יצירת מספר שכבות של צמרת עץ אורן
+        const createPineLevel = (y, radius, height) => {
+            const foliageGeometry = new THREE.ConeGeometry(radius, height, 16);
+            const foliageMaterial = new THREE.MeshStandardMaterial({ 
+                color: new THREE.Color(0.0, 0.35 + Math.random() * 0.1, 0.0), 
+                roughness: 0.8, 
+                metalness: 0.1,
+                side: THREE.DoubleSide
+            });
+            const foliage = new THREE.Mesh(foliageGeometry, foliageMaterial);
+            foliage.position.y = y;
+            foliage.castShadow = true;
+            foliage.receiveShadow = true;
+            return foliage;
+        };
+        
+        // הוספת מספר שכבות לצמרת האורן
+        treeGroup.add(createPineLevel(6, 1.5, 4));
+        treeGroup.add(createPineLevel(4.5, 2, 3));
+        treeGroup.add(createPineLevel(3, 2.5, 3));
+    } else {
+        // גזע עץ רגיל
+        const trunkGeometry = new THREE.CylinderGeometry(0.15, 0.3, 3, 8);
+        const trunkMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x4d3319, 
+            roughness: 0.9, 
+            metalness: 0.0,
+            side: THREE.DoubleSide
+        });
+        const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+        trunk.position.y = 1.5; // גובה הגזע
+        trunk.castShadow = true;
+        trunk.receiveShadow = true;
+        treeGroup.add(trunk);
+        
+        // צמרת העץ - ספירה לא סימטרית לחלוטין
+        const foliageGeometry = new THREE.SphereGeometry(1.5, 16, 16);
+        // הוספת אקראיות למבנה הצמרת
+        const vertices = foliageGeometry.attributes.position.array;
+        for (let i = 0; i < vertices.length; i += 3) {
+            vertices[i] += (Math.random() - 0.5) * 0.6;
+            vertices[i+1] += (Math.random() - 0.5) * 0.6;
+            vertices[i+2] += (Math.random() - 0.5) * 0.6;
+        }
+        
+        const foliageMaterial = new THREE.MeshStandardMaterial({ 
+            color: new THREE.Color(0.1, 0.4 + Math.random() * 0.1, 0.1), 
+            roughness: 0.8, 
+            metalness: 0.1,
+            side: THREE.DoubleSide
+        });
+        const foliage = new THREE.Mesh(foliageGeometry, foliageMaterial);
+        foliage.position.y = 4; // גובה הצמרת מעל הגזע
+        foliage.castShadow = true;
+        foliage.receiveShadow = true;
+        treeGroup.add(foliage);
+    }
+    
+    // קולידר לעץ
+    const colliderRadius = 0.8; // רדיוס הקולידר
+    const treeCollider = new THREE.Mesh(
+        new THREE.CylinderGeometry(colliderRadius, colliderRadius, 8, 8),
+        new THREE.MeshBasicMaterial({ 
+            visible: false 
+            // אפשר להפוך לנראה עבור דיבוג: visible: true, wireframe: true, opacity: 0.5, transparent: true
+        })
+    );
+    treeCollider.position.y = 4;
+    treeGroup.add(treeCollider);
+    treeCollider.userData.isCollider = true;
+    treeCollider.userData.radius = colliderRadius * scale; // שמירת הרדיוס המותאם
+    
+    // התאמת גובה העץ לגובה האדמה
+    const groundHeight = getGroundHeight(x, z);
+    treeGroup.position.y = groundHeight;
+    
+    // הוספת העץ לסצנה
+    scene.add(treeGroup);
+    
+    // הוספת מידע הקולידר למערך
+    treesWithColliders.push({
+        position: new THREE.Vector3(x, groundHeight, z),
+        radius: colliderRadius * scale
+    });
+    
+    return treeGroup;
+};
+
+const checkTreeCollisions = (newPosition) => {
+    // רדיוס השחקן
+    const playerRadius = 0.5;
+    
+    for (const tree of treesWithColliders) {
+        // בדיקת מרחק אופקי בלבד (X,Z)
+        const dx = newPosition.x - tree.position.x;
+        const dz = newPosition.z - tree.position.z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+        
+        // אם המרחק קטן מסכום הרדיוסים, יש התנגשות
+        if (distance < (playerRadius + tree.radius)) {
+            return true; // יש התנגשות
+        }
+    }
+    
+    return false; // אין התנגשות
+};
+        
+        // יצירת יער עצים מציאותי
+        const createRealisticForest = () => {
+            // הגדרות יער
+            const forestRadius = 50;  // רדיוס היער
+            const minDistance = 6;    // מרחק מינימלי בין עצים
+            const numberOfTrees = 40;  // מספר העצים
+            const trees = [];
+            
+            // לולאה ליצירת עצים במיקומים אקראיים
+            for (let i = 0; i < numberOfTrees; i++) {
+                // ניסיון למצוא מיקום מתאים
+                let x, z, tooClose;
+                let attempts = 0;
+                
+                do {
+                    tooClose = false;
+                    
+                    // מיקום אקראי בתוך רדיוס היער
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = 5 + Math.random() * (forestRadius - 5);
+                    
+                    x = Math.cos(angle) * distance;
+                    z = Math.sin(angle) * distance;
+                    
+                    // בדיקה שהעץ לא קרוב מדי לעצים אחרים
+                    for (const tree of trees) {
+                        const dx = x - tree.position.x;
+                        const dz = z - tree.position.z;
+                        const distanceToTree = Math.sqrt(dx * dx + dz * dz);
+                        
+                        if (distanceToTree < minDistance) {
+                            tooClose = true;
+                            break;
+                        }
+                    }
+                    
+                    // הגבלת מספר הניסיונות
+                    attempts++;
+                    if (attempts > 50) {
+                        break;
+                    }
+                } while (tooClose);
+                
+                // אם מצאנו מיקום מתאים, יוצרים עץ
+                if (!tooClose) {
+                    // בחירה אקראית בין סוגי עצים
+                    const treeType = Math.random() < 0.6 ? 'pine' : 'normal';
+                    const scale = 0.8 + Math.random() * 0.4;  // גודל אקראי לגיוון
+                    
+                    const tree = createRealisticTree(x, z, scale, treeType);
+                    trees.push(tree);
+                }
+            }
+            
+            return trees;
+        };
+        
+        // יצירת מערכת שליטה בגוף ראשון
+        const setupFirstPersonControls = () => {
+    controls = new THREE.FirstPersonControls(camera, renderer.domElement);
+    controls.movementSpeed = 4;
+    controls.lookSpeed = 0.03; // הורדת הרגישות מ-0.1 ל-0.05
+    controls.lookVertical = true;
+    controls.constrainVertical = true;
+    controls.verticalMin = Math.PI / 6; // הגבלת מבט למעלה
+    controls.verticalMax = Math.PI / 1.8; // הגבלת מבט למטה
+    
+    // הגדרת אזור מת בקצוות המסך שיעצור את התזוזה
+    const boundaryThreshold = 0.05; // 5% מהקצה (95% מהמסך פעיל)
+    
+    // האזנה לתזוזת העכבר
+    document.addEventListener('mousemove', (e) => {
+        const mouseX = e.clientX / window.innerWidth;
+        const mouseY = e.clientY / window.innerHeight;
+        
+        // בדיקה אם העכבר נמצא באזור המת (קרוב לקצוות)
+        const isNearLeftEdge = mouseX < boundaryThreshold;
+        const isNearRightEdge = mouseX > (1 - boundaryThreshold);
+        const isNearTopEdge = mouseY < boundaryThreshold;
+        const isNearBottomEdge = mouseY > (1 - boundaryThreshold);
+        
+        // עצירת התזוזה אם העכבר בקצוות
+        if (isNearLeftEdge || isNearRightEdge || isNearTopEdge || isNearBottomEdge) {
+            if (controls.activeLook !== false) {
+                controls.activeLook = false;
+            }
+        } else {
+            if (controls.activeLook !== true) {
+                controls.activeLook = true;
+            }
+        }
+    });
+};
+        
+        // טעינת מודל GLB (אם קיים)
+        const loadGLB = (url = '3d/world.glb', scale = 20, position = { x: 0, y: 20, z: 0 }, isCustom = false) => {
+            const loader = new THREE.GLTFLoader();
+            
+            // הצגת הודעת טעינה
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('loading').textContent = 'טוען את המודל...';
+            
+            loader.load(
+                url,
+                (gltf) => {
+                    const model = gltf.scene;
+                    
+                    // הגדרת צללים לכל המשים במודל
+                    model.traverse((node) => {
+                        if (node.isMesh) {
+                            node.castShadow = true;
+                            node.receiveShadow = true;
+                            
+                            // היפוך הנורמלים אם זה לא מודל שהועלה על-ידי המשתמש
+                            if (!isCustom && node.geometry) {
+                                node.geometry.scale(-1, 1, 1);
+                                node.material.side = THREE.BackSide;
+                            }
+                        }
+                    });
+                    
+                    // סולם ומיקום המודל
+                    model.scale.set(scale, scale, scale);
+                    model.position.set(position.x, position.y, position.z);
+                    
+                    // שמירת המודל למשתנה הגלובלי אם זה המודל המקורי
+                    if (!isCustom) {
+                        worldModel = model;
+                    } else {
+                        // הוספה למערך המודלים המותאמים אישית
+                        customModels.push(model);
+                    }
+                    
+                    scene.add(model);
+                    document.getElementById('loading').style.display = 'none';
+                    isLoaded = true;
+                },
+                (xhr) => {
+                    const percentComplete = (xhr.loaded / xhr.total) * 100;
+                    document.getElementById('loading').textContent = 
+                        `טוען את המודל... ${Math.round(percentComplete)}%`;
+                },
+                (error) => {
+                    console.error('שגיאה בטעינת המודל:', error);
+                    document.getElementById('loading').style.display = 'none';
+                    isLoaded = true;
+                }
+            );
+        };
+        
+        // פונקציה לטעינת מודל מקובץ שהועלה
+        const loadModelFromFile = (file) => {
+            const reader = new FileReader();
+            
+            reader.onload = (event) => {
+                const arrayBuffer = event.target.result;
+                
+                // יצירת URL לקובץ
+                const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                
+                // מיקום אקראי עבור המודל החדש אבל רחוק מהשחקן
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 15 + Math.random() * 10; // מרחק של 15-25 יחידות
+                const posX = Math.cos(angle) * distance;
+                const posZ = Math.sin(angle) * distance;
+                
+                // חישוב גובה האדמה במיקום הזה
+                const groundHeight = getGroundHeight(posX, posZ);
+                
+                // טעינת המודל החדש עם מיקום וגודל מותאמים
+                // קנה מידה קטן יותר (1.5) והגבהה של 1.3 יחידות מעל הקרקע
+                loadGLB(url, 1.5, { x: posX, y: groundHeight + 1.3, z: posZ }, true);
+            };
+            
+            reader.readAsArrayBuffer(file);
+        };
+        
+        // אירוע העלאת קובץ
+        document.getElementById('model-upload').addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            
+            if (file) {
+                // הצגת שם הקובץ
+                const fileNameElement = document.getElementById('file-name');
+                fileNameElement.textContent = file.name;
+                fileNameElement.style.display = 'inline';
+                
+                // טעינת המודל
+                loadModelFromFile(file);
+                
+                // איפוס שדה הקלט כדי לאפשר העלאה חוזרת של אותו קובץ
+                event.target.value = '';
+            }
+        });
+        
+        // בדיקה אם המשתמש קרוב לנקודת האינטראקציה
+        const checkInteractionPoint = () => {
+            const distance = camera.position.distanceTo(interactionPoint);
+            
+            if (distance < interactionRadius && !isNearInteractionPoint) {
+                isNearInteractionPoint = true;
+                document.getElementById('interaction-button').style.display = 'block';
+            } 
+            else if (distance >= interactionRadius && isNearInteractionPoint) {
+                isNearInteractionPoint = false;
+                document.getElementById('interaction-button').style.display = 'none';
+            }
+        };
+        
+        // אינטראקציה בלחיצה על הכפתור
+        document.getElementById('interaction-button').addEventListener('click', () => {
+            document.getElementById('next-screen').style.display = 'flex';
+            document.getElementById('interaction-button').style.display = 'none';
+            controls.enabled = false; // השבתת השליטה במצב מסך הבא
+        });
+        
+        // חזרה לעולם
+        document.getElementById('back-button').addEventListener('click', () => {
+            document.getElementById('next-screen').style.display = 'none';
+            controls.enabled = true; // הפעלת השליטה מחדש
+        });
+        
+        // התאמת גודל החלון
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            
+            if (controls) {
+                controls.handleResize();
+            }
+        });
+        
+        // אתחול הסצנה
+        const init = () => {
+            // הגדרת תאורה
+            setupLighting();
+            
+            // יצירת קרקע וסביבה
+            createGround();
+            createRealisticForest();
+            
+            // הגדרת שליטה בגוף ראשון
+            setupFirstPersonControls();
+            
+            // טעינת מודל GLB העיקרי
+            loadGLB();
+            
+            // טעינת מודל הטכנודע ב-5 מקומות רנדומליים
+            loadTechnodaModels();
+            
+            // טיימר לטעינה
+            setTimeout(() => {
+                if (document.getElementById('loading').style.display !== 'none') {
+                    document.getElementById('loading').style.display = 'none';
+                    isLoaded = true;
+                }
+            }, 5000);
+            
+            // התחלת לולאת האנימציה
+            animate();
+        };
+        
+        // פונקציה לטעינת מודל הטכנודע במספר מקומות
+        const loadTechnodaModels = () => {
+            const technodaPath = '3d/technoda.glb';
+            const numberOfModels = 5;
+            
+            // מערך מיקומים רנדומליים עם מרחק מינימלי בין המודלים
+            const positions = [];
+            const minDistance = 10; // מרחק מינימלי בין מודלים
+            
+            // יצירת מיקומים רנדומליים
+            for (let i = 0; i < numberOfModels; i++) {
+                let posX, posZ, tooClose;
+                let attempts = 0;
+                
+                do {
+                    tooClose = false;
+                    
+                    // מיקום רנדומלי בתוך רדיוס גדול מהמרכז
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = 15 + Math.random() * 30; // מרחק של 15-45 יחידות
+                    
+                    posX = Math.cos(angle) * distance;
+                    posZ = Math.sin(angle) * distance;
+                    
+                    // בדיקה שהמודל לא קרוב מדי למודלים אחרים
+                    for (const pos of positions) {
+                        const dx = posX - pos.x;
+                        const dz = posZ - pos.z;
+                        const distanceBetweenModels = Math.sqrt(dx * dx + dz * dz);
+                        
+                        if (distanceBetweenModels < minDistance) {
+                            tooClose = true;
+                            break;
+                        }
+                    }
+                    
+                    // הגבלת מספר הניסיונות
+                    attempts++;
+                    if (attempts > 50) {
+                        break;
+                    }
+                } while (tooClose);
+                
+                // אם מצאנו מיקום מתאים
+                if (!tooClose) {
+                    // חישוב גובה האדמה במיקום הזה
+                    const groundHeight = getGroundHeight(posX, posZ);
+                    
+                    // שמירת המיקום
+                    positions.push({ x: posX, y: groundHeight + 1.3, z: posZ });
+                }
+            }
+            
+            // טעינת המודלים במיקומים שנוצרו
+            positions.forEach((position, index) => {
+                // סקאלה אקראית קטנה
+                const scale = 1.2 + Math.random() * 0.6; // בין 1.2 ל-1.8
+                
+                // טעינת המודל עם פרמטרים שונים
+                setTimeout(() => {
+                    loadGLB(technodaPath, scale, position, true);
+                }, index * 500); // עיכוב קטן בין טעינות להקלה על הדפדפן
+            });
+        };
+        
+        // פונקציית אנימציה
+        const animate = () => {
+    requestAnimationFrame(animate);
+    
+    if (isLoaded) {
+        const delta = clock.getDelta();
+        
+        if (controls) {
+            // שמירת המיקום הקודם לפני העדכון
+            const previousPosition = camera.position.clone();
+            
+            // עדכון השליטה
+            controls.update(delta);
+            
+            // בדיקת התנגשות במיקום החדש
+            if (checkTreeCollisions(camera.position)) {
+                // אם יש התנגשות, חזרה למיקום הקודם
+                camera.position.copy(previousPosition);
+            }
+            
+            // עדכון גובה המצלמה בהתאם לגובה הקרקע
+            const groundHeight = getGroundHeight(camera.position.x, camera.position.z);
+            camera.position.y = groundHeight + PLAYER_HEIGHT;
+            
+            // בדיקת קרבה לנקודת אינטראקציה
+            checkInteractionPoint();
+        }
+    }
+    
+    renderer.render(scene, camera);
+};
+        
+        // הפעלת האתחול כשהדף נטען
+        window.addEventListener('load', init);
+    </script>
